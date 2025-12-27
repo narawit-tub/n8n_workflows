@@ -1,0 +1,425 @@
+{
+  "name": "Inventory checker notification",
+  "nodes": [
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "1cnfAqcN1yjkFtuOBZBn4tzsQqnxLDxKU1KnQlsklxe8",
+          "mode": "list",
+          "cachedResultName": "SKUs",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1cnfAqcN1yjkFtuOBZBn4tzsQqnxLDxKU1KnQlsklxe8/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1741879382,
+          "mode": "list",
+          "cachedResultName": "fa version of skus list",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1cnfAqcN1yjkFtuOBZBn4tzsQqnxLDxKU1KnQlsklxe8/edit#gid=1741879382"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        240,
+        0
+      ],
+      "id": "ea2d2b8c-2809-414b-a614-efad8acf3027",
+      "name": "Get row(s) in sheet",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "pinrrn4CYuHP4VPn",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// 1. Get current date data (Important: n8n should reference Timezone Asia/Bangkok in Workflow Settings)\nconst now = new Date();\nconst todayDate = now.getDate();; // Get day of month 1-31\nconst todayDayIndex = now.getDay(); // Get day index 0 (Sunday) to 6 (Saturday)\n\n// Create helper to convert Thai day names to numbers for comparison with todayDayIndex\nconst dayMapping = {\n  อาทิตย์: 0,\n  จันทร์: 1,\n  อังคาร: 2,\n  พุธ: 3,\n  พฤหัส: 4, // or พฤหัสบดี depending on actual data\n  พฤหัสบดี: 4,\n  ศุกร์: 5,\n  เสาร์: 6,\n};\n\nfunction getListOfNotifySkus() {\n  const rawData = $input.all();\n\n  // Filter data to only rows that need to be notified today\n  const filtered = rawData.filter((item) => {\n    const row = item.json;\n    const schedule = row[\"รอบการเช็ค\"]\n      ? row[\"รอบการเช็ค\"].toString().trim()\n      : \"\";\n\n    // Case 1: No check needed\n    if (!schedule || schedule === \"ไม่ต้องเช็ค\") {\n      return false;\n    }\n\n    // Case 2: Specified as day of week (e.g., \"every Monday\", \"every Saturday\")\n    // Check if any day name exists in the message\n    for (const [dayName, dayIndex] of Object.entries(dayMapping)) {\n      if (schedule.includes(dayName)) {\n        return dayIndex === todayDayIndex;\n      }\n    }\n\n    // Case 3: Specified as date of month (e.g., \"20\" or \"1, 15\")\n    // Split by comma (,) in case there are multiple dates\n    const datesToCheck = schedule.split(\",\").map((d) => parseInt(d.trim()));\n    if (datesToCheck.includes(todayDate)) {\n      return true;\n    }\n\n    return false;\n  });\n\n  // Return only the JSON of rows that passed the condition\n  return filtered.map((item) => item.json);\n}\n\nreturn getListOfNotifySkus();"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        448,
+        0
+      ],
+      "id": "4977a2da-2f81-4df2-9929-93236054960a",
+      "name": "Get a list of sku for next cycle"
+    },
+    {
+      "parameters": {
+        "jsCode": "const sku_name_col = \"ผู้ค้า/สินค้า\"\nconst sku_category_col = \"กลุ่ม\"\nconst sku_id = \"รหัส\"\n  \nfunction convertToLineMessage() {\n  const input = $input.all().map(row => row.json);\n//.sort((a, b) => a.last_nom.localeCompare(b.last_nom));\n  const sortedInput = input.sort((a, b) => a[sku_category_col].localeCompare(b[sku_category_col]))\n\n  const list = sortedInput.map(row => {\n    return `\\nกลุ่ม: ${row[sku_category_col]} - สินค้า: ${row[sku_name_col]} รหัส: ${row[sku_id]}`\n  })\n\n  let message = `รายการที่ต้องเช็คในวันนี้ (${new Date().toDateString()})\\n`;\n\n  list.forEach(row => {\n    message = message.concat(row)\n  })\n  \n  return [{json: {output: message}}]\n}\n\nreturn convertToLineMessage()"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        688,
+        0
+      ],
+      "id": "829d0d33-1828-4e20-a283-32d5861372ae",
+      "name": "Convert to Line message"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 10
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        0,
+        208
+      ],
+      "id": "65fb96cc-c3cc-4929-a251-9819a256ef88",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.line.me/v2/bot/message/broadcast",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer 7lH/QqeYo2F8OvXMNUjI1tEpwPtouBQf2zAAGdruIiFdSwbdCMYLjkAkkjw6bPwgry9UV6JwNgfRxtjTD1wdKMpPwvlGlhf8SPnSKCNEdTwwBP98e7wcbP37pInC5WnFLCbbC0P9Jczc3Ib7W0hOagdB04t89/1O/w1cDnyilFU="
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"messages\": [\n    {\n      \"type\": \"text\",\n      \"text\": {{ JSON.stringify($json.output) }}\n    }\n  ]\n} ",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        944,
+        0
+      ],
+      "id": "76c1da95-9375-4bf8-9851-a9d9c83fd9ab",
+      "name": "Push message to line"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "1cnfAqcN1yjkFtuOBZBn4tzsQqnxLDxKU1KnQlsklxe8",
+          "mode": "list",
+          "cachedResultName": "SKUs",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1cnfAqcN1yjkFtuOBZBn4tzsQqnxLDxKU1KnQlsklxe8/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1741879382,
+          "mode": "list",
+          "cachedResultName": "fa version of skus list",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1cnfAqcN1yjkFtuOBZBn4tzsQqnxLDxKU1KnQlsklxe8/edit#gid=1741879382"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "last notified at": "={{new Date()}}",
+            "row_number": "={{ $json.row_number }}"
+          },
+          "matchingColumns": [
+            "row_number"
+          ],
+          "schema": [
+            {
+              "id": "กลุ่ม",
+              "displayName": "กลุ่ม",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "รหัส",
+              "displayName": "รหัส",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "ผู้ค้า/สินค้า",
+              "displayName": "ผู้ค้า/สินค้า",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "รอบการเช็ค",
+              "displayName": "รอบการเช็ค",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "last notified at",
+              "displayName": "last notified at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "readOnly": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1504,
+        240
+      ],
+      "id": "c6de231a-c305-432c-b4b3-0c1bc4d90dfa",
+      "name": "Update row in sheet",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "pinrrn4CYuHP4VPn",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "chooseBranch",
+        "useDataOfInput": 2
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        944,
+        224
+      ],
+      "id": "82b96a4b-502f-413e-88a0-2164ceb9d25d",
+      "name": "Merge"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "122ab707-ddc0-4ee8-b2a7-2eb365fbb9fb",
+              "leftValue": "={{ $json.statusCode }}",
+              "rightValue": 200,
+              "operator": {
+                "type": "number",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1216,
+        0
+      ],
+      "id": "29b19195-6c57-4649-a8c6-94fda6150f64",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        1216,
+        224
+      ],
+      "id": "6a2bba57-1218-40b8-9412-af3dda3f1fb4",
+      "name": "Loop Over Items"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "2d8aa07a-54e9-49a1-b826-e2f66884877a",
+      "name": "Start your automation workflow :)"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Get row(s) in sheet": {
+      "main": [
+        [
+          {
+            "node": "Get a list of sku for next cycle",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get a list of sku for next cycle": {
+      "main": [
+        [
+          {
+            "node": "Convert to Line message",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Convert to Line message": {
+      "main": [
+        [
+          {
+            "node": "Push message to line",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get row(s) in sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Push message to line": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update row in sheet": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Update row in sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Start your automation workflow :)": {
+      "main": [
+        [
+          {
+            "node": "Get row(s) in sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "727af4e4-68c8-456e-9999-1539a2d1e6b0",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "cddb1db4a04be2f579c0a456b0dd1a65fefc926fa77ae23bdef7a8993274c6d9"
+  },
+  "id": "Se8cQcmKsdVh1Ko4",
+  "tags": []
+}
