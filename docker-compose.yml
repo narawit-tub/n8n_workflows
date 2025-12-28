@@ -36,8 +36,7 @@ services:
       - N8N_LOG_LEVEL=${N8N_LOG_LEVEL}
       - N8N_EDITOR_BASE_URL=${N8N_EDITOR_BASE_URL}
       - WEBHOOK_URL=${WEBHOOK_URL}
-      - GENERIC_TIMEZONE="Asia/Bangkok"
-      - TZ="Asia/Bangkok"
+      - GENERIC_TIMEZONE=${GENERIC_TIMEZONE}
     ports:
       - 5678:5678
     links:
